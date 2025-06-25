@@ -3,22 +3,22 @@
     {
       "name": "opiz2w",
       "cpu_class": "big",
-      "memory_mb": 512,
-      "address": "192.168.1.101:8080",
+      "memory_mb": 1024,
+      "address": "192.168.0.9:8080",
       "python_port": 9000
     },
     {
       "name": "rpiz2w1",
       "cpu_class": "little",
-      "memory_mb": 512,
-      "address": "192.168.1.102:8080",
+      "memory_mb": 256,
+      "address": "192.168.0.7:8080",
       "python_port": 0
     },
     {
       "name": "rpiz2w2",
       "cpu_class": "little",
-      "memory_mb": 2048,
-      "address": "192.168.1.103:8080",
+      "memory_mb": 256,
+      "address": "192.168.1.8:8080",
       "python_port": 0
     }
   ]

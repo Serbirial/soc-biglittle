@@ -6,9 +6,8 @@ import (
 	"net/rpc"
 	"time"
 
-	"unifiedos/config"
-	"unifiedos/rpc"
-	"unifiedos/sharedmem"
+	"bigLITTLE/config"
+	"bigLITTLE/sharedmem"
 )
 
 type Agent struct {
