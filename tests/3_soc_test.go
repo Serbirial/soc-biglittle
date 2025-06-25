@@ -14,14 +14,18 @@ func TestLiveClusterOperations(t *testing.T) {
 	t.Log("=== Live Cluster Integration Test ===")
 	config.LoadConfig("config/socs.json")
 
-	// Initialize shared memory table with all SoC memory
+	// Initialize shared memory table with all SoC memory regions, spaced dynamically
 	var regions []sharedmem.MemRegion
-	for i, soc := range config.GlobalConfig.SoCs {
+	var currentAddr uint64 = 0
+
+	for _, soc := range config.GlobalConfig.SoCs {
+		length := soc.MemoryMB * 1024 * 1024 // convert MB to bytes
 		regions = append(regions, sharedmem.MemRegion{
-			StartAddr: uint64(i) * 0x1000000,
-			Length:    soc.MemoryMB * 1024 * 1024,
+			StartAddr: currentAddr,
+			Length:    length,
 			Owner:     soc.Name,
 		})
+		currentAddr += length
 	}
 
 	memTable, err := sharedmem.NewMemTable(regions)
