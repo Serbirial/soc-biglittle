@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"bigLITTLE/config"
+	ipc "bigLITTLE/ipc"
 	"bigLITTLE/sharedmem"
 )
 
@@ -14,41 +15,24 @@ type Agent struct {
 	soCName      string
 	memTable     *sharedmem.MemTable
 	memManager   *MemoryManager
-	rpcClients   map[string]rpc.AgentClient
+	rpcClients   map[string]*rpc.Client
 	pythonClient *PythonClient
 }
 
 func NewAgent(cfg config.SoCConfig, memTable *sharedmem.MemTable) *Agent {
 	ramBytes := cfg.MemoryMB * 1024 * 1024
-	memManager := NewMemoryManager(cfg.Name, memTable, ramBytes)
+	memManager := NewMemoryManager(cfg.Name, memTable, ramBytes, cfg.Name)
 	return &Agent{
 		soCName:    cfg.Name,
 		memTable:   memTable,
 		memManager: memManager,
-		rpcClients: make(map[string]rpc.AgentClient),
+		rpcClients: make(map[string]*rpc.Client),
 	}
-}
-
-func (a *Agent) ConnectRPCClients(allConfigs []config.SoCConfig) error {
-	for _, c := range allConfigs {
-		if c.Name == a.soCName {
-			continue // don't connect to self
-		}
-		client, err := rpc.DialHTTP("tcp", c.Address)
-		if err != nil {
-			log.Printf("Warning: cannot connect to RPC %s: %v", c.Name, err)
-			continue
-		}
-		a.rpcClients[c.Name] = client
-		a.memManager.RegisterRPCClient(c.Name, client)
-		log.Printf("Connected to RPC client %s at %s", c.Name, c.Address)
-	}
-	return nil
 }
 
 func (a *Agent) StartRPCServer(address string) {
 	go func() {
-		err := rpc.StartRPCServer(a.memManager, address)
+		err := ipc.StartRPCServer(a.memManager, address)
 		if err != nil {
 			log.Fatalf("RPC server error: %v", err)
 		}
@@ -72,10 +56,12 @@ func (a *Agent) StartPythonClient(cfg config.SoCConfig) error {
 func (a *Agent) Run(allConfigs []config.SoCConfig, rpcListenAddr string) {
 	a.StartRPCServer(rpcListenAddr)
 
-	err := a.ConnectRPCClients(allConfigs)
+	// Connect to all remote SoCs and register their clients in memory manager
+	clients, err := ipc.ConnectRPCClients(a.soCName, allConfigs)
 	if err != nil {
 		log.Printf("Error connecting RPC clients: %v", err)
 	}
+	a.rpcClients = clients
 
 	// Find big SoC and connect Python client (if this is NOT the big, this is just client)
 	var bigSoC *config.SoCConfig

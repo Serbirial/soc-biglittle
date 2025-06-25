@@ -1,9 +1,5 @@
 package rpc
 
-import (
-	"context"
-)
-
 // MemoryRequest for reading memory.
 type MemoryRequest struct {
 	Address uint64
@@ -37,7 +33,7 @@ type TaskResponse struct {
 
 // AgentClient is the RPC client interface used by MemoryManager.
 type AgentClient interface {
-	ReadMemory(ctx context.Context, req *MemoryRequest) (*MemoryResponse, error)
-	WriteMemory(ctx context.Context, req *MemoryWriteRequest) (*MemoryResponse, error)
-	RunTask(ctx context.Context, req *TaskRequest) (*TaskResponse, error)
+	ReadMemory(req *MemoryRequest) (*MemoryResponse, error)
+	WriteMemory(req *MemoryWriteRequest) (*MemoryResponse, error)
+	RunTask(req *TaskRequest) (*TaskResponse, error)
 }
