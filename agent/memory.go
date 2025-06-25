@@ -12,16 +12,16 @@ import (
 )
 
 type MemoryManager struct {
-	Self         string
-	Table        *sharedmem.MemTable
-	IPC          *rpc.Client
-	rpcClients   map[string]*rpc.Client
-	localRAM     []byte
-	ramLock      sync.RWMutex
+	Self       string
+	Table      *sharedmem.MemTable
+	rpcClients map[string]*rpc.Client
+	localRAM   []byte
+	ramLock    sync.RWMutex
+
 	localSoCName string
 
-	usage     uint64 // bytes currently used on this SoC
-	softLimit uint64 // maximum allowed bytes before overflow
+	usage     uint64 // bytes currently used on this SoC (allocated locally)
+	softLimit uint64 // max allowed bytes before overflow
 }
 
 func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, localSoCName string) *MemoryManager {
@@ -32,11 +32,10 @@ func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, l
 		localRAM:     make([]byte, ramBytes),
 		localSoCName: localSoCName,
 		usage:        0,
-		softLimit:    uint64(float64(ramBytes) * 0.9), // 90% of ramBytes
+		softLimit:    uint64(float64(ramBytes) * 0.9),
 	}
 }
 
-// RegisterRPCClient registers an RPC client to communicate with a remote SoC.
 func (m *MemoryManager) RegisterRPCClient(soCName string, client *rpc.Client) {
 	m.rpcClients[soCName] = client
 }
@@ -55,25 +54,22 @@ func (m *MemoryManager) Read(ctx context.Context, addr uint64, size uint64) ([]b
 		if offset+size > uint64(len(m.localRAM)) {
 			return nil, errors.New("read out of bounds")
 		}
-
 		data := make([]byte, size)
 		copy(data, m.localRAM[offset:offset+size])
 		return data, nil
 	}
 
+	// Remote read via RPC
 	client, ok := m.rpcClients[owner]
 	if !ok {
 		return nil, fmt.Errorf("no RPC client for SoC %s", owner)
 	}
 
-	req := &ipc.MemoryRequest{
-		Address: addr,
-		Size:    size,
-	}
-	var resp ipc.MemoryResponse
-	err = (*client).Call("RPCServer.ReadMemory", req, &resp)
+	req := &ipc.MemoryRequest{Address: addr, Size: size}
+	resp := &ipc.MemoryResponse{}
+	err = client.Call("RPCServer.ReadMemory", req, resp)
 	if err != nil {
-		return nil, fmt.Errorf("RPC memory read failed: %w", err)
+		return nil, fmt.Errorf("RPC read failed: %w", err)
 	}
 	return resp.Data, nil
 }
@@ -93,8 +89,50 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 			return errors.New("write out of bounds")
 		}
 
-		// Local write
-		copy(m.localRAM[offset:offset+uint64(len(data))], data)
+		// Check if enough space available locally (usage + data length <= soft limit)
+		if m.usage+uint64(len(data)) <= m.softLimit {
+			copy(m.localRAM[offset:offset+uint64(len(data))], data)
+			m.usage += uint64(len(data))
+			return nil
+		}
+
+		// Partial local write and overflow remote write
+		allowedLocal := m.softLimit - m.usage
+		if allowedLocal > uint64(len(data)) {
+			allowedLocal = uint64(len(data))
+		}
+
+		// Write allowed local part
+		copy(m.localRAM[offset:offset+allowedLocal], data[:allowedLocal])
+		m.usage += allowedLocal
+
+		// Write remainder remotely (overflow)
+		overflowAddr := addr + allowedLocal
+		overflowData := data[allowedLocal:]
+
+		// Find a SoC with free memory for overflow
+		targetSoC, err := m.Table.FindSoCWithFreeMemory(uint64(len(overflowData)))
+		if err != nil {
+			return fmt.Errorf("no SoC with free memory for overflow: %w", err)
+		}
+
+		// Update ownership for overflow region in MemTable
+		err = m.UpdateOwnership(overflowAddr, uint64(len(overflowData)), targetSoC)
+		if err != nil {
+			return fmt.Errorf("failed to update ownership for overflow region: %w", err)
+		}
+
+		client, ok := m.rpcClients[targetSoC]
+		if !ok {
+			return fmt.Errorf("no RPC client for SoC %s", targetSoC)
+		}
+
+		req := &ipc.MemoryWriteRequest{Address: overflowAddr, Data: overflowData}
+		resp := &ipc.MemoryResponse{}
+		err = client.Call("RPCServer.WriteMemory", req, resp)
+		if err != nil {
+			return fmt.Errorf("RPC overflow write failed: %w", err)
+		}
 		return nil
 	}
 
@@ -103,14 +141,55 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 	if !ok {
 		return fmt.Errorf("no RPC client for SoC %s", owner)
 	}
-
-	var resp ipc.MemoryResponse
-	err = (*client).Call("RPCServer.WriteMemory", &ipc.MemoryWriteRequest{
-		Address: addr,
-		Data:    data,
-	}, &resp)
+	req := &ipc.MemoryWriteRequest{Address: addr, Data: data}
+	resp := &ipc.MemoryResponse{}
+	err = client.Call("RPCServer.WriteMemory", req, resp)
 	if err != nil {
-		return fmt.Errorf("RPC memory write failed: %w", err)
+		return fmt.Errorf("RPC write failed: %w", err)
 	}
+	return nil
+}
+
+// UpdateOwnership updates the ownership of a memory range [addr, addr+size) to newOwner.
+// This involves freeing any previous allocations and reallocating with the new owner.
+func (m *MemoryManager) UpdateOwnership(addr uint64, size uint64, newOwner string) error {
+	// This is tricky because we need to free previous allocation(s) covering the range,
+	// then add a free region owned by newOwner, then allocate for newOwner.
+
+	// For simplicity: assume the entire range corresponds to exactly one allocated region.
+
+	// Find allocated region at addr
+	m.Table.mu.Lock()
+	defer m.Table.mu.Unlock()
+
+	allocRegion, ok := m.Table.allocations[addr]
+	if !ok {
+		return fmt.Errorf("no allocated region at address 0x%x to update ownership", addr)
+	}
+
+	if allocRegion.Length < size {
+		return fmt.Errorf("allocated region too small for requested ownership update")
+	}
+
+	// Remove allocation from allocations and allocated regions list
+	delete(m.Table.allocations, addr)
+	for i, r := range m.Table.regions {
+		if r.StartAddr == addr {
+			m.Table.regions = append(m.Table.regions[:i], m.Table.regions[i+1:]...)
+			break
+		}
+	}
+
+	// Add new free region with newOwner
+	newFreeRegion := sharedmem.MemRegion{
+		StartAddr: addr,
+		Length:    size,
+		Owner:     newOwner,
+	}
+	m.Table.freeRegions = append(m.Table.freeRegions, newFreeRegion)
+
+	// Merge free regions to keep consistency
+	m.Table.mergeFreeRegions()
+
 	return nil
 }

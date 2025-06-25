@@ -14,14 +14,13 @@ type MemRegion struct {
 	Owner     string // SoC name, e.g. "soc1"
 }
 
-// MemTable manages the full virtual address space, mapping addresses to owners,
-// and tracks SoC memory usage for dynamic allocation and ownership updates.
+// MemTable manages the full virtual address space, mapping addresses to owners and tracking allocations.
 type MemTable struct {
-	mu      sync.RWMutex
-	regions []MemRegion
-
-	// usage tracks total bytes allocated per SoC name
-	usage map[string]uint64
+	OwnershipLock sync.RWMutex
+	Mu            sync.RWMutex
+	Regions       []MemRegion          // all allocated memory regions owned by SoCs
+	FreeRegions   []MemRegion          // free regions available for allocation (owned by SoCs)
+	Allocations   map[uint64]MemRegion // allocated regions startAddr -> region
 }
 
 // NewMemTable creates a MemTable from a list of MemRegions.
@@ -36,30 +35,140 @@ func NewMemTable(regions []MemRegion) (*MemTable, error) {
 		}
 	}
 
-	usage := make(map[string]uint64)
-	for _, r := range regions {
-		usage[r.Owner] += r.Length
-	}
-
-	// Sort regions by StartAddr ascending
-	sort.Slice(regions, func(i, j int) bool {
-		return regions[i].StartAddr < regions[j].StartAddr
-	})
+	// Initially, all regions are free and owned by their respective SoCs.
+	freeRegions := make([]MemRegion, len(regions))
+	copy(freeRegions, regions)
 
 	return &MemTable{
-		regions: regions,
-		usage:   usage,
+		Regions:     []MemRegion{}, // start with no allocations
+		FreeRegions: freeRegions,
+		Allocations: make(map[uint64]MemRegion),
 	}, nil
+}
+
+// sortRegions sorts both allocated and free regions by StartAddr ascending
+func (mt *MemTable) sortRegions() {
+	sort.Slice(mt.Regions, func(i, j int) bool {
+		return mt.Regions[i].StartAddr < mt.Regions[j].StartAddr
+	})
+	sort.Slice(mt.FreeRegions, func(i, j int) bool {
+		return mt.FreeRegions[i].StartAddr < mt.FreeRegions[j].StartAddr
+	})
+}
+
+// MergeFreeRegions merges contiguous free regions with the same Owner.
+// Do not call without locking the mu lock, there is no safeguards.
+func (mt *MemTable) MergeFreeRegions() {
+	if len(mt.FreeRegions) < 2 {
+		return
+	}
+
+	mt.sortRegions()
+
+	merged := []MemRegion{}
+	prev := mt.FreeRegions[0]
+
+	for i := 1; i < len(mt.FreeRegions); i++ {
+		curr := mt.FreeRegions[i]
+		if prev.Owner == curr.Owner && prev.StartAddr+prev.Length == curr.StartAddr {
+			// Merge contiguous free regions owned by the same SoC
+			prev.Length += curr.Length
+		} else {
+			merged = append(merged, prev)
+			prev = curr
+		}
+	}
+	merged = append(merged, prev)
+
+	mt.FreeRegions = merged
+}
+
+// AllocRegion finds a free region with at least 'size' bytes and allocates it to 'owner'.
+// Returns the allocated MemRegion or error if no suitable free region.
+func (mt *MemTable) AllocRegion(size uint64, owner string) (MemRegion, error) {
+	mt.Mu.Lock()
+	defer mt.Mu.Unlock()
+
+	for i, free := range mt.FreeRegions {
+		if free.Owner == owner && free.Length >= size {
+			allocRegion := MemRegion{
+				StartAddr: free.StartAddr,
+				Length:    size,
+				Owner:     owner,
+			}
+			mt.Allocations[allocRegion.StartAddr] = allocRegion
+			mt.Regions = append(mt.Regions, allocRegion)
+
+			if free.Length == size {
+				// Exact fit: remove free region
+				mt.FreeRegions = append(mt.FreeRegions[:i], mt.FreeRegions[i+1:]...)
+			} else {
+				// Shrink free region
+				mt.FreeRegions[i].StartAddr += size
+				mt.FreeRegions[i].Length -= size
+			}
+
+			mt.sortRegions()
+			return allocRegion, nil
+		}
+	}
+
+	return MemRegion{}, errors.New("no free region large enough to allocate for owner " + owner)
+}
+
+// FreeRegion frees a previously allocated region starting at 'startAddr'.
+func (mt *MemTable) FreeRegion(startAddr uint64) error {
+	mt.Mu.Lock()
+	defer mt.Mu.Unlock()
+
+	alloc, ok := mt.Allocations[startAddr]
+	if !ok {
+		return fmt.Errorf("no allocated region at address 0x%x", startAddr)
+	}
+
+	// Remove from allocated map and from regions slice
+	delete(mt.Allocations, startAddr)
+	for i, r := range mt.Regions {
+		if r.StartAddr == startAddr {
+			mt.Regions = append(mt.Regions[:i], mt.Regions[i+1:]...)
+			break
+		}
+	}
+
+	// Add freed region back to freeRegions with original owner
+	mt.FreeRegions = append(mt.FreeRegions, MemRegion{
+		StartAddr: alloc.StartAddr,
+		Length:    alloc.Length,
+		Owner:     alloc.Owner,
+	})
+
+	mt.MergeFreeRegions()
+
+	return nil
+}
+
+// FindSoCWithFreeMemory finds a SoC owning a free region at least 'size' bytes.
+// Returns the owner SoC's name or error if none found.
+func (mt *MemTable) FindSoCWithFreeMemory(size uint64) (string, error) {
+	mt.Mu.RLock()
+	defer mt.Mu.RUnlock()
+
+	for _, free := range mt.FreeRegions {
+		if free.Length >= size {
+			return free.Owner, nil
+		}
+	}
+
+	return "", errors.New("no SoC with enough free memory")
 }
 
 // FindRegion returns the MemRegion that contains the given address, or nil if none.
 func (mt *MemTable) FindRegion(addr uint64) *MemRegion {
-	mt.mu.RLock()
-	defer mt.mu.RUnlock()
-	for i := range mt.regions {
-		r := &mt.regions[i]
-		if addr >= r.StartAddr && addr < r.StartAddr+r.Length {
-			return r
+	mt.Mu.RLock()
+	defer mt.Mu.RUnlock()
+	for _, region := range mt.Regions {
+		if addr >= region.StartAddr && addr < region.StartAddr+region.Length {
+			return &region
 		}
 	}
 	return nil
@@ -69,174 +178,8 @@ func (mt *MemTable) FindRegion(addr uint64) *MemRegion {
 func (mt *MemTable) TranslateAddr(addr uint64) (owner string, offset uint64, err error) {
 	region := mt.FindRegion(addr)
 	if region == nil {
-		return "", 0, fmt.Errorf("address 0x%x not in any memory region", addr)
+		return "", 0, fmt.Errorf("address 0x%x not in any allocated memory region", addr)
 	}
 	offset = addr - region.StartAddr
 	return region.Owner, offset, nil
-}
-
-// AddRegion adds a new memory region (for dynamic allocation).
-func (mt *MemTable) AddRegion(region MemRegion) error {
-	mt.mu.Lock()
-	defer mt.mu.Unlock()
-	// Simple overlap check (inefficient, can be improved)
-	for _, r := range mt.regions {
-		if !(region.StartAddr+region.Length <= r.StartAddr || region.StartAddr >= r.StartAddr+r.Length) {
-			return errors.New("new region overlaps existing region")
-		}
-	}
-	mt.regions = append(mt.regions, region)
-	sort.Slice(mt.regions, func(i, j int) bool {
-		return mt.regions[i].StartAddr < mt.regions[j].StartAddr
-	})
-
-	// Update usage tracking
-	mt.usage[region.Owner] += region.Length
-	return nil
-}
-
-// GetRegions returns a copy of all memory regions.
-func (mt *MemTable) GetRegions() []MemRegion {
-	mt.mu.RLock()
-	defer mt.mu.RUnlock()
-	cpy := make([]MemRegion, len(mt.regions))
-	copy(cpy, mt.regions)
-	return cpy
-}
-
-// FindSoCWithFreeMemory returns the name of a SoC that has at least size bytes free.
-// This is a simple heuristic that assumes each SoC has a fixed total capacity you define externally.
-// Here, you must provide the total capacity map from outside or hardcode it per SoC.
-func (mt *MemTable) FindSoCWithFreeMemory(size uint64) (string, error) {
-	mt.mu.RLock()
-	defer mt.mu.RUnlock()
-
-	// TODO: Replace this with your known SoC capacities or pass as parameter.
-	// For example purposes, hardcoded:
-	soCCapacity := map[string]uint64{
-		"soc1": 512 * 1024 * 1024,      // 512 MB
-		"soc2": 512 * 1024 * 1024,      // 512 MB
-		"soc3": 2 * 1024 * 1024 * 1024, // 2 GB
-	}
-
-	for soc, cap := range soCCapacity {
-		used := mt.usage[soc]
-		if cap-used >= size {
-			return soc, nil
-		}
-	}
-
-	return "", errors.New("no SoC with enough free memory")
-}
-
-// UpdateOwnership updates ownership of a memory range [startAddr, startAddr+length)
-// to a new SoC owner. It splits, merges, and updates the regions accordingly.
-// Returns error if range is invalid or overlaps multiple regions incorrectly.
-func (mt *MemTable) UpdateOwnership(startAddr uint64, length uint64, newOwner string) error {
-	mt.mu.Lock()
-	defer mt.mu.Unlock()
-
-	if length == 0 {
-		return errors.New("length must be > 0")
-	}
-	endAddr := startAddr + length
-
-	// Find all regions overlapping the update range
-	var overlappingIndices []int
-	for i, r := range mt.regions {
-		rEnd := r.StartAddr + r.Length
-		if endAddr <= r.StartAddr {
-			break
-		}
-		if startAddr < rEnd && endAddr > r.StartAddr {
-			overlappingIndices = append(overlappingIndices, i)
-		}
-	}
-	if len(overlappingIndices) == 0 {
-		return errors.New("no regions overlap update range")
-	}
-
-	// We'll build newRegions replacing overlapping with updated ownership parts
-	newRegions := []MemRegion{}
-
-	// Add all regions before the first overlap unchanged
-	newRegions = append(newRegions, mt.regions[:overlappingIndices[0]]...)
-
-	// Process overlapping regions with possible splits
-	for _, idx := range overlappingIndices {
-		r := mt.regions[idx]
-		rStart := r.StartAddr
-		rEnd := r.StartAddr + r.Length
-
-		// Case 1: Part before update range remains with old owner
-		if rStart < startAddr {
-			newRegions = append(newRegions, MemRegion{
-				StartAddr: rStart,
-				Length:    startAddr - rStart,
-				Owner:     r.Owner,
-			})
-		}
-
-		// Case 2: Part within update range gets new owner (clamped)
-		overlapStart := max(rStart, startAddr)
-		overlapEnd := min(rEnd, endAddr)
-		newRegions = append(newRegions, MemRegion{
-			StartAddr: overlapStart,
-			Length:    overlapEnd - overlapStart,
-			Owner:     newOwner,
-		})
-
-		// Case 3: Part after update range remains old owner
-		if rEnd > endAddr {
-			newRegions = append(newRegions, MemRegion{
-				StartAddr: endAddr,
-				Length:    rEnd - endAddr,
-				Owner:     r.Owner,
-			})
-		}
-	}
-
-	// Add all regions after last overlap unchanged
-	newRegions = append(newRegions, mt.regions[overlappingIndices[len(overlappingIndices)-1]+1:]...)
-
-	// Merge contiguous regions with same owner to reduce fragmentation
-	mergedRegions := make([]MemRegion, 0, len(newRegions))
-	for _, r := range newRegions {
-		n := len(mergedRegions)
-		if n == 0 {
-			mergedRegions = append(mergedRegions, r)
-		} else {
-			last := &mergedRegions[n-1]
-			if last.Owner == r.Owner && last.StartAddr+last.Length == r.StartAddr {
-				// merge
-				last.Length += r.Length
-			} else {
-				mergedRegions = append(mergedRegions, r)
-			}
-		}
-	}
-
-	// Update usage: recalc full usage from scratch
-	usage := make(map[string]uint64)
-	for _, r := range mergedRegions {
-		usage[r.Owner] += r.Length
-	}
-
-	mt.regions = mergedRegions
-	mt.usage = usage
-
-	return nil
-}
-
-func min(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-func max(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
 }

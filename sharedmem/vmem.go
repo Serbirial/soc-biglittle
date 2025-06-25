@@ -1,7 +1,6 @@
 package sharedmem
 
 import (
-	"bigLITTLE/agent"
 	"context"
 	"errors"
 )
@@ -9,31 +8,43 @@ import (
 type VMem struct {
 	Size      uint64
 	StartAddr uint64
-	mem       *agent.MemoryManager
+	mem       MemoryManagerIface
 }
 
-// New allocates a virtual memory block of `size` bytes from the global pool.
-func New(size uint64, mem *agent.MemoryManager) (*VMem, error) {
-	ctx := context.Background()
-	// This assumes you manually provide a base address (or use an allocator in future)
-	start := uint64(0x10000000) // TEMP: fixed base for demo
+type MemoryManagerIface interface {
+	Write(ctx context.Context, addr uint64, data []byte) error
+	Read(ctx context.Context, addr uint64, length uint64) ([]byte, error)
+	AllocRegion(size uint64, owner string) (MemRegion, error)
+	FreeRegion(startAddr uint64) error
+}
 
-	// Zero-init the memory block in 1MB chunks
-	chunk := make([]byte, 1024*1024)
-	for i := uint64(0); i < size; i += uint64(len(chunk)) {
-		sz := uint64(len(chunk))
-		if i+sz > size {
-			sz = size - i
+// New allocates a virtual memory block of `size` bytes from the global pool using MemTable allocator.
+func New(size uint64, mem MemoryManagerIface, owner string) (*VMem, error) {
+	region, err := mem.AllocRegion(size, owner)
+	if err != nil {
+		return nil, err
+	}
+
+	// Zero-init the memory block in chunks
+	ctx := context.Background()
+	chunkSize := uint64(1024 * 1024) // 1MB chunks
+	zeroChunk := make([]byte, chunkSize)
+	for i := uint64(0); i < region.Length; i += chunkSize {
+		sz := chunkSize
+		if i+sz > region.Length {
+			sz = region.Length - i
 		}
-		err := mem.Write(ctx, start+i, chunk[:sz])
+		err := mem.Write(ctx, region.StartAddr+i, zeroChunk[:sz])
 		if err != nil {
+			// On error, free allocated region to avoid leak
+			mem.FreeRegion(region.StartAddr)
 			return nil, err
 		}
 	}
 
 	return &VMem{
-		Size:      size,
-		StartAddr: start,
+		Size:      region.Length,
+		StartAddr: region.StartAddr,
 		mem:       mem,
 	}, nil
 }
@@ -52,4 +63,9 @@ func (v *VMem) Read(offset uint64, length uint64) ([]byte, error) {
 		return nil, errors.New("read out of bounds")
 	}
 	return v.mem.Read(context.Background(), v.StartAddr+offset, length)
+}
+
+// Free releases this VMem back to the allocator.
+func (v *VMem) Free() error {
+	return v.mem.FreeRegion(v.StartAddr)
 }
