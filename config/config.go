@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"os"
 )
 
 type SoCConfig struct {
@@ -21,6 +22,14 @@ type ClusterConfig struct {
 var GlobalConfig ClusterConfig
 
 func LoadConfig(path string) {
+	// Use CONFIG_PATH env var if set
+	if envPath := os.Getenv("CONFIG_PATH"); envPath != "" {
+		log.Printf("Using CONFIG_PATH from environment: %s", envPath)
+		path = envPath
+	} else {
+		log.Printf("Using default config path: %s", path)
+	}
+
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatalf("Failed to read config file %s: %v", path, err)
