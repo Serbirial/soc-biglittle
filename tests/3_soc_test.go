@@ -11,6 +11,8 @@ import (
 )
 
 func TestLiveClusterOperations(t *testing.T) {
+	agent.RegisterGobTypes()
+
 	t.Log("=== Live Cluster Integration Test ===")
 	config.LoadConfig("config/socs.json")
 

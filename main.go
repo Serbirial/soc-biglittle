@@ -21,8 +21,7 @@ var (
 )
 
 func main() {
-	sharedmem.Init()
-	agent.Init()
+	agent.RegisterGobTypes()
 
 	flag.Parse()
 
