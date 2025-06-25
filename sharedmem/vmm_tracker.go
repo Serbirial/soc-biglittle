@@ -9,40 +9,40 @@ import (
 type TaskMemoryTracker struct {
 	mt *MemTable
 
-	allocLock sync.Mutex
+	AllocLock sync.Mutex
 	// Map taskID -> list of allocated regions
-	taskAllocations map[string][]MemRegion
+	TaskAllocations map[string][]MemRegion
 }
 
 // NewTaskMemoryTracker creates a new tracker with given MemTable
 func NewTaskMemoryTracker(mt *MemTable) *TaskMemoryTracker {
 	return &TaskMemoryTracker{
 		mt:              mt,
-		taskAllocations: make(map[string][]MemRegion),
+		TaskAllocations: make(map[string][]MemRegion),
 	}
 }
 
 // AllocPagesForTask allocates a memory region of size bytes for a task
 // and records ownership.
 func (t *TaskMemoryTracker) AllocPagesForTask(taskID string, size uint64, owner string) (MemRegion, error) {
-	t.allocLock.Lock()
-	defer t.allocLock.Unlock()
+	t.AllocLock.Lock()
+	defer t.AllocLock.Unlock()
 
 	region, err := t.mt.AllocRegion(size, owner)
 	if err != nil {
 		return MemRegion{}, fmt.Errorf("allocation failed: %w", err)
 	}
 
-	t.taskAllocations[taskID] = append(t.taskAllocations[taskID], region)
+	t.TaskAllocations[taskID] = append(t.TaskAllocations[taskID], region)
 	return region, nil
 }
 
 // FreeTaskPages frees all memory regions allocated for a task.
 func (t *TaskMemoryTracker) FreeTaskPages(taskID string) error {
-	t.allocLock.Lock()
-	defer t.allocLock.Unlock()
+	t.AllocLock.Lock()
+	defer t.AllocLock.Unlock()
 
-	regions, ok := t.taskAllocations[taskID]
+	regions, ok := t.TaskAllocations[taskID]
 	if !ok {
 		return fmt.Errorf("no allocations found for task %s", taskID)
 	}
@@ -54,15 +54,15 @@ func (t *TaskMemoryTracker) FreeTaskPages(taskID string) error {
 		}
 	}
 
-	delete(t.taskAllocations, taskID)
+	delete(t.TaskAllocations, taskID)
 	return nil
 }
 
 // GetTaskAllocations returns the allocated regions for a task.
 func (t *TaskMemoryTracker) GetTaskAllocations(taskID string) ([]MemRegion, bool) {
-	t.allocLock.Lock()
-	defer t.allocLock.Unlock()
+	t.AllocLock.Lock()
+	defer t.AllocLock.Unlock()
 
-	regions, ok := t.taskAllocations[taskID]
+	regions, ok := t.TaskAllocations[taskID]
 	return regions, ok
 }
