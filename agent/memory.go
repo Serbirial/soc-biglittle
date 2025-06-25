@@ -159,10 +159,10 @@ func (m *MemoryManager) UpdateOwnership(addr uint64, size uint64, newOwner strin
 	// For simplicity: assume the entire range corresponds to exactly one allocated region.
 
 	// Find allocated region at addr
-	m.Table.mu.Lock()
-	defer m.Table.mu.Unlock()
+	m.Table.OwnershipLock.Lock()
+	defer m.Table.OwnershipLock.Unlock()
 
-	allocRegion, ok := m.Table.allocations[addr]
+	allocRegion, ok := m.Table.Allocations[addr]
 	if !ok {
 		return fmt.Errorf("no allocated region at address 0x%x to update ownership", addr)
 	}
@@ -172,10 +172,10 @@ func (m *MemoryManager) UpdateOwnership(addr uint64, size uint64, newOwner strin
 	}
 
 	// Remove allocation from allocations and allocated regions list
-	delete(m.Table.allocations, addr)
-	for i, r := range m.Table.regions {
+	delete(m.Table.Allocations, addr)
+	for i, r := range m.Table.Regions {
 		if r.StartAddr == addr {
-			m.Table.regions = append(m.Table.regions[:i], m.Table.regions[i+1:]...)
+			m.Table.Regions = append(m.Table.Regions[:i], m.Table.Regions[i+1:]...)
 			break
 		}
 	}
@@ -186,10 +186,10 @@ func (m *MemoryManager) UpdateOwnership(addr uint64, size uint64, newOwner strin
 		Length:    size,
 		Owner:     newOwner,
 	}
-	m.Table.freeRegions = append(m.Table.freeRegions, newFreeRegion)
+	m.Table.FreeRegions = append(m.Table.FreeRegions, newFreeRegion)
 
 	// Merge free regions to keep consistency
-	m.Table.mergeFreeRegions()
+	m.Table.MergeFreeRegions()
 
 	return nil
 }

@@ -174,6 +174,16 @@ func (mt *MemTable) FindRegion(addr uint64) *MemRegion {
 	return nil
 }
 
+// GetFreeRegionsForTesting returns a copy of the free memory regions.
+// This is intended ONLY for testing and debugging purposes.
+func (mt *MemTable) GetFreeRegionsForTesting() []MemRegion {
+	mt.Mu.RLock()
+	defer mt.Mu.RUnlock()
+	cpy := make([]MemRegion, len(mt.FreeRegions))
+	copy(cpy, mt.FreeRegions)
+	return cpy
+}
+
 // TranslateAddr returns the owner SoC and offset within that SoC's memory for a global address.
 func (mt *MemTable) TranslateAddr(addr uint64) (owner string, offset uint64, err error) {
 	region := mt.FindRegion(addr)

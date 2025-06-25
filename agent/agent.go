@@ -13,8 +13,8 @@ import (
 
 type Agent struct {
 	soCName      string
-	memTable     *sharedmem.MemTable
-	memManager   *MemoryManager
+	MemTable     *sharedmem.MemTable
+	MemManager   *MemoryManager
 	rpcClients   map[string]*rpc.Client
 	pythonClient *PythonClient
 }
@@ -24,15 +24,15 @@ func NewAgent(cfg config.SoCConfig, memTable *sharedmem.MemTable) *Agent {
 	memManager := NewMemoryManager(cfg.Name, memTable, ramBytes, cfg.Name)
 	return &Agent{
 		soCName:    cfg.Name,
-		memTable:   memTable,
-		memManager: memManager,
+		MemTable:   memTable,
+		MemManager: memManager,
 		rpcClients: make(map[string]*rpc.Client),
 	}
 }
 
 func (a *Agent) StartRPCServer(address string) {
 	go func() {
-		err := ipc.StartRPCServer(a.memManager, address)
+		err := ipc.StartRPCServer(a.MemManager, address)
 		if err != nil {
 			log.Fatalf("RPC server error: %v", err)
 		}
