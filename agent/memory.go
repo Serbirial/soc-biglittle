@@ -18,10 +18,10 @@ type MemoryManager struct {
 	localRAM   []byte
 	ramLock    sync.RWMutex
 
-	localSoCName string
+	LocalSoCName string
 
 	usage     uint64 // bytes currently used on this SoC (allocated locally)
-	softLimit uint64 // max allowed bytes before overflow
+	SoftLimit uint64 // max allowed bytes before overflow
 }
 
 func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, localSoCName string) *MemoryManager {
@@ -30,9 +30,9 @@ func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, l
 		Table:        table,
 		rpcClients:   make(map[string]*rpc.Client),
 		localRAM:     make([]byte, ramBytes),
-		localSoCName: localSoCName,
+		LocalSoCName: localSoCName,
 		usage:        0,
-		softLimit:    uint64(float64(ramBytes) * 0.9),
+		SoftLimit:    uint64(float64(ramBytes) * 0.9),
 	}
 }
 
@@ -47,7 +47,7 @@ func (m *MemoryManager) Read(ctx context.Context, addr uint64, size uint64) ([]b
 		return nil, err
 	}
 
-	if owner == m.localSoCName {
+	if owner == m.LocalSoCName {
 		m.ramLock.RLock()
 		defer m.ramLock.RUnlock()
 
@@ -81,7 +81,7 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 		return err
 	}
 
-	if owner == m.localSoCName {
+	if owner == m.LocalSoCName {
 		m.ramLock.Lock()
 		defer m.ramLock.Unlock()
 
@@ -90,14 +90,14 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 		}
 
 		// Check if enough space available locally (usage + data length <= soft limit)
-		if m.usage+uint64(len(data)) <= m.softLimit {
+		if m.usage+uint64(len(data)) <= m.SoftLimit {
 			copy(m.localRAM[offset:offset+uint64(len(data))], data)
 			m.usage += uint64(len(data))
 			return nil
 		}
 
 		// Partial local write and overflow remote write
-		allowedLocal := m.softLimit - m.usage
+		allowedLocal := m.SoftLimit - m.usage
 		if allowedLocal > uint64(len(data)) {
 			allowedLocal = uint64(len(data))
 		}
@@ -192,4 +192,23 @@ func (m *MemoryManager) UpdateOwnership(addr uint64, size uint64, newOwner strin
 	m.Table.MergeFreeRegions()
 
 	return nil
+}
+
+func (m *MemoryManager) AllocRegion(size uint64, owner string) (sharedmem.MemRegion, error) {
+	m.Table.OwnershipLock.Lock()
+	defer m.Table.OwnershipLock.Unlock()
+
+	region, err := m.Table.AllocRegion(size, owner)
+	if err != nil {
+		return sharedmem.MemRegion{}, err
+	}
+
+	return region, nil
+}
+
+func (m *MemoryManager) FreeRegion(startAddr uint64) error {
+	m.Table.OwnershipLock.Lock()
+	defer m.Table.OwnershipLock.Unlock()
+
+	return m.Table.FreeRegion(startAddr)
 }

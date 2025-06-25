@@ -174,6 +174,38 @@ func (mt *MemTable) FindRegion(addr uint64) *MemRegion {
 	return nil
 }
 
+// AddRegion adds a new free memory region owned by 'owner'.
+// Returns error if the new region overlaps any existing allocated or free region.
+func (mt *MemTable) AddRegion(newRegion MemRegion) error {
+	mt.Mu.Lock()
+	defer mt.Mu.Unlock()
+
+	// Check overlap with allocated regions
+	for _, alloc := range mt.Regions {
+		if !(newRegion.StartAddr+newRegion.Length <= alloc.StartAddr ||
+			newRegion.StartAddr >= alloc.StartAddr+alloc.Length) {
+			return fmt.Errorf("new region overlaps allocated region at 0x%x", alloc.StartAddr)
+		}
+	}
+
+	// Check overlap with free regions
+	for _, free := range mt.FreeRegions {
+		if !(newRegion.StartAddr+newRegion.Length <= free.StartAddr ||
+			newRegion.StartAddr >= free.StartAddr+free.Length) {
+			return fmt.Errorf("new region overlaps free region at 0x%x", free.StartAddr)
+		}
+	}
+
+	// Add new region as free region
+	mt.FreeRegions = append(mt.FreeRegions, newRegion)
+
+	// Sort and merge free regions to keep data consistent
+	mt.sortRegions()
+	mt.MergeFreeRegions()
+
+	return nil
+}
+
 // GetFreeRegionsForTesting returns a copy of the free memory regions.
 // This is intended ONLY for testing and debugging purposes.
 func (mt *MemTable) GetFreeRegionsForTesting() []MemRegion {
