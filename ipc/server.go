@@ -7,13 +7,17 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
-
-	"bigLITTLE/agent"
 )
 
+// MemoryManagerIface defines only the methods RPCServer needs from MemoryManager.
+type MemoryManagerIface interface {
+	Read(ctx context.Context, addr uint64, size uint64) ([]byte, error)
+	Write(ctx context.Context, addr uint64, data []byte) error
+}
+
+// RPCServer is the RPC handler struct.
 type RPCServer struct {
-	MemManager *agent.MemoryManager
-	// Add task manager and other components as needed
+	MemManager MemoryManagerIface
 }
 
 // ReadMemory RPC handler
@@ -38,13 +42,13 @@ func (s *RPCServer) WriteMemory(req *MemoryWriteRequest, resp *MemoryResponse) e
 
 // RunTask RPC handler
 func (s *RPCServer) RunTask(req *TaskRequest, resp *TaskResponse) error {
-	// Placeholder: you can implement task dispatch here
+	// Placeholder
 	resp.Result = fmt.Sprintf("Task %s executed (stub)", req.ID)
 	return nil
 }
 
 // StartRPCServer starts the RPC server on given address (e.g. ":8080").
-func StartRPCServer(memManager *agent.MemoryManager, address string) error {
+func StartRPCServer(memManager MemoryManagerIface, address string) error {
 	server := &RPCServer{
 		MemManager: memManager,
 	}

@@ -10,7 +10,7 @@ import (
 
 	"bigLITTLE/agent"
 	"bigLITTLE/config"
-	"bigLITTLE/rpc"
+	ipc "bigLITTLE/ipc"
 	"bigLITTLE/sharedmem"
 )
 
@@ -108,13 +108,13 @@ except NameError:
 print(f"Counter is now {shared_counter}")
 `
 
-	taskReq := &rpc.TaskRequest{
+	taskReq := &ipc.TaskRequest{
 		ID:       "test-1",
 		CodeType: "python",
 		Code:     pythonCode,
 	}
 
-	var taskResp rpc.TaskResponse
+	var taskResp ipc.TaskResponse
 	err = client.Call("RPCServer.RunTask", taskReq, &taskResp)
 	if err != nil {
 		log.Fatalf("Task RPC call failed: %v", err)
