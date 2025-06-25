@@ -6,7 +6,7 @@ import (
 	"encoding/gob"
 )
 
-func init() {
+func Init() {
 	// --- Sharedmem types used in RPC communication ---
 	gob.Register(sharedmem.MemRegion{})
 	gob.Register([]sharedmem.MemRegion{})

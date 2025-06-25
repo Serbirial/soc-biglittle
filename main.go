@@ -21,6 +21,9 @@ var (
 )
 
 func main() {
+	sharedmem.Init()
+	agent.Init()
+
 	flag.Parse()
 
 	// Load SoC cluster config

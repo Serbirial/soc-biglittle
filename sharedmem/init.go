@@ -4,7 +4,7 @@ import (
 	"encoding/gob"
 )
 
-func init() {
+func Init() {
 	// Register types passed through RPC
 	gob.Register(MemRegion{})
 	gob.Register([]byte{})
