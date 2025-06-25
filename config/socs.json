@@ -18,7 +18,7 @@
       "name": "raspberrypi-worker2",
       "cpu_class": "little",
       "memory_mb": 256,
-      "address": "192.168.1.8:8080",
+      "address": "192.168.0.8:8080",
       "python_port": 0
     }
   ]
