@@ -33,14 +33,14 @@ func RegisterGobTypes() {
 	gob.Register(rpc.TaskResponse{})
 
 	// Register pointers as well if used in RPC
-	gob.Register(&sharedmem.MemRegion{})
-	gob.Register(&sharedmem.MemTable{})
-	gob.Register(&sharedmem.VMem{})
-	gob.Register(&MemoryManager{})
-	gob.Register(&Agent{})
-	gob.Register(&rpc.RPCServer{})
-	gob.Register(&rpc.TaskRequest{})
-	gob.Register(&rpc.TaskResponse{})
+	//gob.Register(&sharedmem.MemRegion{})
+	//gob.Register(&sharedmem.MemTable{})
+	//gob.Register(&sharedmem.VMem{})
+	//gob.Register(&MemoryManager{})
+	//gob.Register(&Agent{})
+	//gob.Register(&rpc.RPCServer{})
+	//gob.Register(&rpc.TaskRequest{})
+	//gob.Register(&rpc.TaskResponse{})
 
 	gob.Register(time.Time{})
 	gob.Register([]byte(nil))
