@@ -20,6 +20,8 @@ type Agent struct {
 }
 
 func NewAgent(cfg config.SoCConfig, memTable *sharedmem.MemTable) *Agent {
+	RegisterGobTypes()
+
 	ramBytes := cfg.MemoryMB * 1024 * 1024
 	memManager := NewMemoryManager(cfg.Name, memTable, ramBytes, cfg.Name)
 	return &Agent{

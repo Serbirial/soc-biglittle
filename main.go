@@ -21,7 +21,6 @@ var (
 )
 
 func main() {
-	agent.RegisterGobTypes()
 
 	flag.Parse()
 
