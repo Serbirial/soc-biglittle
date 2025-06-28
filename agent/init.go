@@ -1,3 +1,14 @@
+package agent
+
+import (
+	"bigLITTLE/config"
+	rpc "bigLITTLE/ipc"
+	"bigLITTLE/sharedmem"
+	"encoding/gob"
+	"time"
+)
+
+// RegisterGobTypes registers all types used in gob RPC serialization for the cluster.
 func RegisterGobTypes() {
 	// Config
 	gob.Register(config.SoCConfig{})
