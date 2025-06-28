@@ -1,9 +1,9 @@
-package agent
+package rpc
 
 import (
 	"bigLITTLE/config"
-	rpc "bigLITTLE/ipc"
 	"bigLITTLE/sharedmem"
+
 	"encoding/gob"
 	"time"
 )
@@ -19,18 +19,14 @@ func RegisterGobTypes() {
 	gob.Register(sharedmem.MemTable{})
 	gob.Register(sharedmem.VMem{})
 
-	// Agent types
-	gob.Register(MemoryManager{})
-	gob.Register(Agent{})
-
 	// IPC package types
-	gob.Register(rpc.RPCServer{})
+	gob.Register(RPCServer{})
 
-	gob.Register(rpc.MemoryRequest{})
-	gob.Register(rpc.MemoryResponse{})
-	gob.Register(rpc.MemoryWriteRequest{})
-	gob.Register(rpc.TaskRequest{})
-	gob.Register(rpc.TaskResponse{})
+	gob.Register(MemoryRequest{})
+	gob.Register(MemoryResponse{})
+	gob.Register(MemoryWriteRequest{})
+	gob.Register(TaskRequest{})
+	gob.Register(TaskResponse{})
 
 	// Register pointers as well if used in RPC
 	//gob.Register(&sharedmem.MemRegion{})
@@ -38,12 +34,12 @@ func RegisterGobTypes() {
 	//gob.Register(&sharedmem.VMem{})
 	//gob.Register(&MemoryManager{})
 	//gob.Register(&Agent{})
-	//gob.Register(&rpc.RPCServer{})
-	//gob.Register(&rpc.TaskRequest{})
-	//gob.Register(&rpc.TaskResponse{})
+	//gob.Register(&RPCServer{})
+	//gob.Register(&TaskRequest{})
+	//gob.Register(&TaskResponse{})
 
 	gob.Register(time.Time{})
 	gob.Register([]byte(nil))
-	gob.Register(rpc.AgentClient(nil))
+	gob.Register(AgentClient(nil))
 	gob.Register(map[string]interface{}(nil))
 }
