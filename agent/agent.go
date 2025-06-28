@@ -20,7 +20,6 @@ type Agent struct {
 }
 
 func NewAgent(cfg config.SoCConfig, memTable *sharedmem.MemTable) *Agent {
-	RegisterGobTypes()
 
 	ramBytes := cfg.MemoryMB * 1024 * 1024
 	memManager := NewMemoryManager(cfg.Name, memTable, ramBytes, cfg.Name)
@@ -56,6 +55,8 @@ func (a *Agent) StartPythonClient(cfg config.SoCConfig) error {
 
 // Run starts the agent’s main loop.
 func (a *Agent) Run(allConfigs []config.SoCConfig, rpcListenAddr string) {
+	RegisterGobTypes()
+
 	a.StartRPCServer(rpcListenAddr)
 
 	// Connect to all remote SoCs and register their clients in memory manager

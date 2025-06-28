@@ -1,7 +1,9 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net"
@@ -32,6 +34,10 @@ func (s *RPCServer) ReadMemory(req *MemoryRequest, resp *MemoryResponse) error {
 
 // WriteMemory RPC handler
 func (s *RPCServer) WriteMemory(req *MemoryWriteRequest, resp *MemoryResponse) error {
+	var dump bytes.Buffer
+	gob.NewEncoder(&dump).Encode(req)
+	log.Printf("Server received gob payload: % x", dump.Bytes())
+
 	err := s.MemManager.Write(context.Background(), req.Address, req.Data)
 	if err != nil {
 		return err

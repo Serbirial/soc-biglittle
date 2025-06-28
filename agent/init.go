@@ -5,6 +5,7 @@ import (
 	"bigLITTLE/rpc"
 	"bigLITTLE/sharedmem"
 	"encoding/gob"
+	"log"
 	"time"
 )
 
@@ -35,4 +36,6 @@ func RegisterGobTypes() {
 	gob.Register([]byte{})
 	gob.Register(map[string]interface{}{})
 	gob.Register(time.Time{})
+	log.Println("Registered all gob types")
+
 }

@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	"bigLITTLE/rpc"
@@ -129,6 +132,14 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 
 		req := &rpc.MemoryWriteRequest{Address: overflowAddr, Data: overflowData}
 		resp := &rpc.MemoryResponse{}
+		// Debug: dump gob-encoded payload for inspection
+		var dump bytes.Buffer
+		if err := gob.NewEncoder(&dump).Encode(req); err != nil {
+			log.Printf("gob debug encode failed: %v", err)
+		} else {
+			log.Printf("gob dump bytes: % x", dump.Bytes())
+		}
+
 		err = client.Call("RPCServer.WriteMemory", req, resp)
 		if err != nil {
 			return fmt.Errorf("RPC overflow write failed: %w", err)
