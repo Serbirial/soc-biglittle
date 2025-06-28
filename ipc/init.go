@@ -40,6 +40,5 @@ func RegisterGobTypes() {
 
 	gob.Register(time.Time{})
 	gob.Register([]byte(nil))
-	gob.Register(AgentClient(nil))
 	gob.Register(map[string]interface{}(nil))
 }
