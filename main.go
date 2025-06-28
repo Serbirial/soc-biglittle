@@ -4,13 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/rpc"
+	nrpc "net/rpc"
 	"os"
 	"time"
 
 	"bigLITTLE/agent"
 	"bigLITTLE/config"
-	ipc "bigLITTLE/ipc"
+	"bigLITTLE/rpc"
 	"bigLITTLE/sharedmem"
 )
 
@@ -94,7 +94,7 @@ func runMaster(socs []config.SoCConfig, memTable *sharedmem.MemTable) {
 		log.Fatal("No big SoC with python port configured")
 	}
 
-	client, err := rpc.DialHTTP("tcp", bigSoC.Address)
+	client, err := nrpc.DialHTTP("tcp", bigSoC.Address)
 	if err != nil {
 		log.Fatalf("Failed to connect to big SoC RPC at %s: %v", bigSoC.Address, err)
 	}
@@ -109,13 +109,13 @@ except NameError:
 print(f"Counter is now {shared_counter}")
 `
 
-	taskReq := &ipc.TaskRequest{
+	taskReq := &rpc.TaskRequest{
 		ID:       "test-1",
 		CodeType: "python",
 		Code:     pythonCode,
 	}
 
-	var taskResp ipc.TaskResponse
+	var taskResp rpc.TaskResponse
 	err = client.Call("RPCServer.RunTask", taskReq, &taskResp)
 	if err != nil {
 		log.Fatalf("Task RPC call failed: %v", err)

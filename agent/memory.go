@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"sync"
 
-	ipc "bigLITTLE/ipc"
+	"bigLITTLE/rpc"
 	"bigLITTLE/sharedmem"
-	"net/rpc"
+	nrpc "net/rpc"
 )
 
 type MemoryManager struct {
 	Self       string
 	Table      *sharedmem.MemTable
-	rpcClients map[string]*rpc.Client
+	rpcClients map[string]*nrpc.Client
 	localRAM   []byte
 	ramLock    sync.RWMutex
 
@@ -28,7 +28,7 @@ func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, l
 	return &MemoryManager{
 		Self:         self,
 		Table:        table,
-		rpcClients:   make(map[string]*rpc.Client),
+		rpcClients:   make(map[string]*nrpc.Client),
 		localRAM:     make([]byte, ramBytes),
 		LocalSoCName: localSoCName,
 		usage:        0,
@@ -36,7 +36,7 @@ func NewMemoryManager(self string, table *sharedmem.MemTable, ramBytes uint64, l
 	}
 }
 
-func (m *MemoryManager) RegisterRPCClient(soCName string, client *rpc.Client) {
+func (m *MemoryManager) RegisterRPCClient(soCName string, client *nrpc.Client) {
 	m.rpcClients[soCName] = client
 }
 
@@ -65,8 +65,8 @@ func (m *MemoryManager) Read(ctx context.Context, addr uint64, size uint64) ([]b
 		return nil, fmt.Errorf("no RPC client for SoC %s", owner)
 	}
 
-	req := &ipc.MemoryRequest{Address: addr, Size: size}
-	resp := &ipc.MemoryResponse{}
+	req := &rpc.MemoryRequest{Address: addr, Size: size}
+	resp := &rpc.MemoryResponse{}
 	err = client.Call("RPCServer.ReadMemory", req, resp)
 	if err != nil {
 		return nil, fmt.Errorf("RPC read failed: %w", err)
@@ -127,8 +127,8 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 			return fmt.Errorf("no RPC client for SoC %s", targetSoC)
 		}
 
-		req := &ipc.MemoryWriteRequest{Address: overflowAddr, Data: overflowData}
-		resp := &ipc.MemoryResponse{}
+		req := &rpc.MemoryWriteRequest{Address: overflowAddr, Data: overflowData}
+		resp := &rpc.MemoryResponse{}
 		err = client.Call("RPCServer.WriteMemory", req, resp)
 		if err != nil {
 			return fmt.Errorf("RPC overflow write failed: %w", err)
@@ -141,8 +141,8 @@ func (m *MemoryManager) Write(ctx context.Context, addr uint64, data []byte) err
 	if !ok {
 		return fmt.Errorf("no RPC client for SoC %s", owner)
 	}
-	req := &ipc.MemoryWriteRequest{Address: addr, Data: data}
-	resp := &ipc.MemoryResponse{}
+	req := &rpc.MemoryWriteRequest{Address: addr, Data: data}
+	resp := &rpc.MemoryResponse{}
 	err = client.Call("RPCServer.WriteMemory", req, resp)
 	if err != nil {
 		return fmt.Errorf("RPC write failed: %w", err)

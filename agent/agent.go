@@ -3,11 +3,11 @@ package agent
 import (
 	"fmt"
 	"log"
-	"net/rpc"
+	nrpc "net/rpc"
 	"time"
 
 	"bigLITTLE/config"
-	ipc "bigLITTLE/ipc"
+	"bigLITTLE/rpc"
 	"bigLITTLE/sharedmem"
 )
 
@@ -15,7 +15,7 @@ type Agent struct {
 	soCName      string
 	MemTable     *sharedmem.MemTable
 	MemManager   *MemoryManager
-	rpcClients   map[string]*rpc.Client
+	rpcClients   map[string]*nrpc.Client
 	pythonClient *PythonClient
 }
 
@@ -28,13 +28,13 @@ func NewAgent(cfg config.SoCConfig, memTable *sharedmem.MemTable) *Agent {
 		soCName:    cfg.Name,
 		MemTable:   memTable,
 		MemManager: memManager,
-		rpcClients: make(map[string]*rpc.Client),
+		rpcClients: make(map[string]*nrpc.Client),
 	}
 }
 
 func (a *Agent) StartRPCServer(address string) {
 	go func() {
-		err := ipc.StartRPCServer(a.MemManager, address)
+		err := rpc.StartRPCServer(a.MemManager, address)
 		if err != nil {
 			log.Fatalf("RPC server error: %v", err)
 		}
@@ -59,7 +59,7 @@ func (a *Agent) Run(allConfigs []config.SoCConfig, rpcListenAddr string) {
 	a.StartRPCServer(rpcListenAddr)
 
 	// Connect to all remote SoCs and register their clients in memory manager
-	clients, err := ipc.ConnectRPCClients(a.soCName, allConfigs)
+	clients, err := rpc.ConnectRPCClients(a.soCName, allConfigs)
 	if err != nil {
 		log.Printf("Error connecting RPC clients: %v", err)
 	}
