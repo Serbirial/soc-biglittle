@@ -1,48 +1,37 @@
-package agent
-
-import (
-	"bigLITTLE/config"
-	rpc "bigLITTLE/ipc"
-	"bigLITTLE/sharedmem"
-	"encoding/gob"
-	"time"
-)
-
-// RegisterGobTypes registers all types used in gob RPC serialization for the cluster.
 func RegisterGobTypes() {
-	// Config types
+	// Config
 	gob.Register(config.SoCConfig{})
 	gob.Register(config.ClusterConfig{})
 
-	// Sharedmem types
+	// Sharedmem
 	gob.Register(sharedmem.MemRegion{})
 	gob.Register(sharedmem.MemTable{})
 	gob.Register(sharedmem.VMem{})
 
-	// Agent types
-	gob.Register(MemoryManager{})
+	// Agent
 	gob.Register(Agent{})
+	gob.Register(MemoryManager{})
 
-	// IPC package types
+	// IPC types (both values and pointers)
 	gob.Register(rpc.RPCServer{})
 
 	gob.Register(rpc.MemoryRequest{})
-	gob.Register(rpc.MemoryResponse{})
+	gob.Register(&rpc.MemoryRequest{}) // ✅ pointer version
+
 	gob.Register(rpc.MemoryWriteRequest{})
+	gob.Register(&rpc.MemoryWriteRequest{}) // ✅ pointer version
+
+	gob.Register(rpc.MemoryResponse{})
+	gob.Register(&rpc.MemoryResponse{}) // ✅ pointer version
+
 	gob.Register(rpc.TaskRequest{})
+	gob.Register(&rpc.TaskRequest{}) // ✅ pointer version
+
 	gob.Register(rpc.TaskResponse{})
+	gob.Register(&rpc.TaskResponse{}) // ✅ pointer version
 
-	// Register pointers as well if used in RPC
-	//gob.Register(&sharedmem.MemRegion{})
-	//gob.Register(&sharedmem.MemTable{})
-	//gob.Register(&sharedmem.VMem{})
-	//gob.Register(&MemoryManager{})
-	//gob.Register(&Agent{})
-	//gob.Register(&rpc.RPCServer{})
-	//gob.Register(&rpc.TaskRequest{})
-	//gob.Register(&rpc.TaskResponse{})
-
-	gob.Register(time.Time{})
+	// Built-in types
 	gob.Register([]byte(nil))
 	gob.Register(map[string]interface{}(nil))
+	gob.Register(time.Time{})
 }
